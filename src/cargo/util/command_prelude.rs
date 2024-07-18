@@ -12,13 +12,14 @@ use crate::util::{
     print_available_packages, print_available_tests,
 };
 use crate::CargoResult;
-use anyhow::bail;
+use anyhow::{bail, Context};
 use cargo_util::paths;
 use cargo_util_schemas::manifest::ProfileName;
 use cargo_util_schemas::manifest::RegistryName;
 use cargo_util_schemas::manifest::StringOrVec;
 use clap::builder::UnknownArgumentValueParser;
 use std::ffi::{OsStr, OsString};
+use std::fs;
 use std::path::Path;
 use std::path::PathBuf;
 
@@ -295,6 +296,15 @@ pub trait CommandExt: Sized {
         )
     }
 
+    fn arg_lockfile_path(self) -> Self {
+        self._arg(
+            opt("lockfile-path", "Path to the Cargo.lock file (unstable)")
+                .value_name("FILE")
+                // TODO: seemed to be the best option, but maybe should be something else?
+                .help_heading(heading::MANIFEST_OPTIONS),
+        )
+    }
+
     fn arg_message_format(self) -> Self {
         self._arg(multi_opt("message-format", "FMT", "Error format"))
     }
@@ -515,6 +525,10 @@ pub trait ArgMatchesExt {
 
     fn root_manifest(&self, gctx: &GlobalContext) -> CargoResult<PathBuf> {
         root_manifest(self._value_of("manifest-path").map(Path::new), gctx)
+    }
+
+    fn lockfile_path(&self, gctx: &GlobalContext) -> CargoResult<PathBuf> {
+        lockfile_path(self._value_of("manifest-path").map(Path::new), gctx)
     }
 
     #[tracing::instrument(skip_all)]
@@ -984,6 +998,51 @@ pub fn root_manifest(manifest_path: Option<&Path>, gctx: &GlobalContext) -> Carg
     } else {
         find_root_manifest_for_wd(gctx.cwd())
     }
+}
+
+pub fn lockfile_path(lockfile_path: Option<&Path>, gctx: &GlobalContext) -> CargoResult<PathBuf> {
+    let path;
+
+    if let Some(lockfile_path) = lockfile_path {
+        if !gctx.cli_unstable().unstable_options {
+            bail!("`--lockfile-path` option requires `-Zunstable-options`")
+        }
+
+        if lockfile_path.is_absolute() {
+            path = lockfile_path.to_path_buf();
+        } else {
+            path = gctx.cwd().join(lockfile_path);
+        }
+
+        if !path.ends_with("Cargo.lock") && !crate::util::toml::is_embedded(&path) {
+            bail!("the lockfile-path must be a path to a Cargo.lock file")
+        }
+        if path.is_dir() {
+            bail!(
+                "lockfile path `{}` is a directory but expected a file",
+                lockfile_path.display()
+            )
+        }
+        if !path.exists() {
+            // Root case should already be covered above
+            let parent_path = lockfile_path
+                .parent()
+                .unwrap_or_else(|| unreachable!("Lockfile path can't be root"));
+
+            if !parent_path.exists() {
+                fs::create_dir_all(parent_path).with_context(|| {
+                    format!(
+                        "Failed to create lockfile-path parent directory {}",
+                        parent_path.display()
+                    )
+                })?
+            }
+        }
+    } else {
+        path = gctx.cwd().join("Cargo.lock");
+    }
+
+    Ok(path)
 }
 
 #[track_caller]

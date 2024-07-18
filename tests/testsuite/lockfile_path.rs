@@ -1,11 +1,10 @@
 //! Tests for `lockfile-path` flag
 
-use cargo_test_support::{
-    basic_bin_manifest, cargo_test, main_file, project, project_in, symlink_supported, Project,
-    ProjectBuilder,
-};
-use gix::open::permissions;
 use std::fs;
+
+use cargo_test_support::{
+    basic_bin_manifest, cargo_test, project, symlink_supported, Project, ProjectBuilder,
+};
 
 fn basic_project() -> ProjectBuilder {
     return project()
@@ -29,10 +28,6 @@ fn assert_lockfile_created(command: &str) {
 
     assert!(!p.root().join("Cargo.lock").is_file());
     assert!(p.root().join(lockfile_path_argument).is_file());
-}
-
-fn assert_bad_name() {
-    // TODO: fail if name is not Cargo.lock -> make it unit test
 }
 
 fn assert_symlink_in_path(command: &str) {
@@ -104,7 +99,7 @@ fn assert_broken_symlink(command: &str) {
 }
 
 fn assert_loop_symlink(command: &str) {
-    if (!symlink_supported()) {
+    if !symlink_supported() {
         return;
     }
 
