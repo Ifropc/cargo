@@ -44,46 +44,6 @@ fn assert_lockfile_created(command: &str) {
     assert!(!p.root().join("Cargo.lock").is_file());
 }
 
-fn assert_embed(command: &str) {
-    let lockfile_path_argument = "mylockfile/Cargo.lock";
-    let embed = r#"#!/usr/bin/env cargo
-
-//! ```cargo
-//! [dependencies]
-//! clap = { version = "4.2", features = ["derive"] }
-//! ```
-
-use clap::Parser;
-
-#[derive(Parser, Debug)]
-#[clap(version)]
-struct Args {
-    #[clap(short, long, help = "Path to config")]
-    config: Option<std::path::PathBuf>,
-}
-
-fn main() {
-    let args = Args::parse();
-    println!("{:?}", args);
-}"#;
-    let p = project()
-        .file("src/main.rs", &embed)
-        .build();
-
-    p.cargo(command)
-        .masquerade_as_nightly_cargo(&["unstable-options"])
-        .arg("-Zunstable-options")
-        .arg("--lockfile-path")
-        .arg(lockfile_path_argument)
-        .arg("--manifest-path")
-        .arg("src/main.rs")
-        .arg("-Zscript")
-        .run();
-
-    assert!(p.root().join(lockfile_path_argument).is_file());
-    assert!(!p.root().join("Cargo.lock").is_file());
-}
-
 fn assert_lockfile_override(command: &str) {
     let lockfile_path_argument = "mylockfile/Cargo.lock";
     let p = basic_project()
@@ -204,37 +164,66 @@ Caused by:
         .run();
 }
 
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_lockfile_created() {
-    assert_lockfile_created("metadata");
+macro_rules! tests {
+    ($name: ident, $command:expr) => {
+        #[cfg(test)]
+        mod $name {
+            use super::*;
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_lockfile_created() {
+                assert_lockfile_created($command);
+            }
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_lockfile_override() {
+                assert_lockfile_override($command);
+            }
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_symlink_in_path() {
+                assert_symlink_in_path($command);
+            }
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_symlink_lockfile() {
+                assert_symlink_lockfile($command);
+            }
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_broken_symlink() {
+                assert_broken_symlink($command);
+            }
+        
+            #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+            fn test_loop_symlink() {
+                assert_loop_symlink($command);
+            }
+        }
+    }
 }
 
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_embed() {
-    assert_embed("metadata");
-}
-
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_lockfile_override() {
-    assert_lockfile_override("metadata");
-}
-
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_symlink_in_path() {
-    assert_symlink_in_path("metadata");
-}
-
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_symlink_lockfile() {
-    assert_symlink_lockfile("metadata");
-}
-
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_broken_symlink() {
-    assert_broken_symlink("metadata");
-}
-
-#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
-fn metadata_loop_symlink() {
-    assert_loop_symlink("metadata");
-}
+tests!(add, "add");
+tests!(bench, "bench");
+tests!(build, "build");
+tests!(check, "check");
+tests!(clean, "clean");
+tests!(doc, "doc");
+tests!(fetch, "fetch");
+tests!(fix, "fix");
+tests!(generate_lockfile, "generate-lockfile");
+tests!(locate_project, "locate-project");
+tests!(metadata, "metadata");
+tests!(package, "package");
+tests!(pkgid, "pkgid");
+tests!(publish, "publish");
+tests!(read_manifest, "read-manifest");
+tests!(remove, "remove");
+tests!(run, "run");
+tests!(rustc, "rustc");
+tests!(rustdoc, "rustdoc");
+tests!(test, "test");
+tests!(tree, "tree");
+tests!(update, "update");
+tests!(vendor, "vendor");
+tests!(verify_project, "verify-project");
