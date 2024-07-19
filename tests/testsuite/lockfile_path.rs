@@ -1,10 +1,11 @@
 //! Tests for `lockfile-path` flag
 
-use std::fs;
-
+use cargo_test_support::paths::CargoPathExt;
 use cargo_test_support::{
     basic_bin_manifest, cargo_test, project, symlink_supported, Project, ProjectBuilder,
 };
+use snapbox::str;
+use std::fs;
 
 fn basic_project() -> ProjectBuilder {
     return project()
@@ -12,8 +13,10 @@ fn basic_project() -> ProjectBuilder {
         .file("src/main.rs", "fn main() {}");
 }
 
-fn run_with_path(p: &Project, command: &str, lockfile_path_argument: &str) {
+fn run_basic_command(p: &Project, command: &str, lockfile_path_argument: &str) {
     p.cargo(command)
+        .masquerade_as_nightly_cargo(&["unstable-options"])
+        .arg("-Zunstable-options")
         .arg("--lockfile-path")
         .arg(lockfile_path_argument)
         .run();
@@ -24,10 +27,21 @@ fn assert_lockfile_created(command: &str) {
     let lockfile_path_argument = "mylockfile/Cargo.lock";
     let p = basic_project().build();
 
-    run_with_path(&p, command, lockfile_path_argument);
+    for _ in 1..=2 {
+        run_basic_command(&p, command, lockfile_path_argument);
+        assert!(p.root().join(lockfile_path_argument).is_file());
+        assert!(!p.root().join("Cargo.lock").is_file());
+    }
 
-    assert!(!p.root().join("Cargo.lock").is_file());
+    p.root()
+        .join(lockfile_path_argument)
+        .parent()
+        .unwrap()
+        .rm_rf();
+
+    run_basic_command(&p, command, lockfile_path_argument);
     assert!(p.root().join(lockfile_path_argument).is_file());
+    assert!(!p.root().join("Cargo.lock").is_file());
 }
 
 fn assert_symlink_in_path(command: &str) {
@@ -45,10 +59,37 @@ fn assert_symlink_in_path(command: &str) {
         .unwrap_or_else(|e| panic!("could not create directory {}", e));
     assert!(p.root().join(src).is_dir());
 
-    run_with_path(&p, command, lockfile_path_argument.as_str());
+    run_basic_command(&p, command, lockfile_path_argument.as_str());
 
     assert!(p.root().join(format!("{src}/Cargo.lock")).is_file());
+    assert!(p.root().join(lockfile_path_argument).is_file());
+    assert!(p.root().join(dst).join("Cargo.lock").is_file());
 }
+
+// TODO: test embed:
+// --lockfile-path mylockfile/Cargo.lock --manifest-path src/main.rs -Zunstable-options -Zscript
+// Example embed:
+
+// #!/usr/bin/env cargo
+//
+// //! ```cargo
+// //! [dependencies]
+// //! clap = { version = "4.2", features = ["derive"] }
+// //! ```
+//
+// use clap::Parser;
+//
+// #[derive(Parser, Debug)]
+// #[clap(version)]
+// struct Args {
+//     #[clap(short, long, help = "Path to config")]
+//     config: Option<std::path::PathBuf>,
+// }
+//
+// fn main() {
+//     let args = Args::parse();
+//     println!("{:?}", args);
+// }
 
 fn assert_symlink_lockfile(command: &str) {
     if !symlink_supported() {
@@ -73,7 +114,7 @@ version = "0.5.0"
 
     assert!(p.root().join(src).is_file());
 
-    run_with_path(&p, command, lockfile_path_argument);
+    run_basic_command(&p, command, lockfile_path_argument);
 
     assert!(!p.root().join("Cargo.lock").is_file());
 }
@@ -91,10 +132,18 @@ fn assert_broken_symlink(command: &str) {
     assert!(!p.root().join(src).is_dir());
 
     p.cargo(command)
+        .masquerade_as_nightly_cargo(&["unstable-options"])
+        .arg("-Zunstable-options")
         .arg("--lockfile-path")
         .arg(lockfile_path_argument)
         .with_status(101)
-        .with_stderr_data("TODO")
+        .with_stderr_data(str![[r#"
+[ERROR] Failed to create lockfile-path parent directory somedir/link
+
+Caused by:
+  File exists (os error 17)
+
+"#]])
         .run();
 }
 
@@ -114,10 +163,18 @@ fn assert_loop_symlink(command: &str) {
     assert!(!p.root().join(src).is_dir());
 
     p.cargo(command)
+        .masquerade_as_nightly_cargo(&["unstable-options"])
+        .arg("-Zunstable-options")
         .arg("--lockfile-path")
         .arg(lockfile_path_argument)
         .with_status(101)
-        .with_stderr_data("TODO")
+        .with_stderr_data(str![[r#"
+[ERROR] Failed to fetch lock file's parent path metadata somedir/link
+
+Caused by:
+  Too many levels of symbolic links (os error 40)
+
+"#]])
         .run();
 }
 
@@ -127,37 +184,37 @@ fn assert_lockfile_override(command: &str) {
         .file("Cargo.lock", "This is an invalid lock file!")
         .build();
 
-    run_with_path(&p, command, lockfile_path_argument);
+    run_basic_command(&p, command, lockfile_path_argument);
 
     assert!(p.root().join(lockfile_path_argument).is_file());
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_lockfile_created() {
     assert_lockfile_created("metadata");
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_lockfile_override() {
     assert_lockfile_override("metadata");
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_symlink_in_path() {
     assert_symlink_in_path("metadata");
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_symlink_lockfile() {
     assert_symlink_lockfile("metadata");
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_broken_symlink() {
     assert_broken_symlink("metadata");
 }
 
-#[cargo_test]
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_loop_symlink() {
     assert_loop_symlink("metadata");
 }
