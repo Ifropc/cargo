@@ -44,6 +44,57 @@ fn assert_lockfile_created(command: &str) {
     assert!(!p.root().join("Cargo.lock").is_file());
 }
 
+fn assert_embed(command: &str) {
+    let lockfile_path_argument = "mylockfile/Cargo.lock";
+    let embed = r#"#!/usr/bin/env cargo
+
+//! ```cargo
+//! [dependencies]
+//! clap = { version = "4.2", features = ["derive"] }
+//! ```
+
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[clap(version)]
+struct Args {
+    #[clap(short, long, help = "Path to config")]
+    config: Option<std::path::PathBuf>,
+}
+
+fn main() {
+    let args = Args::parse();
+    println!("{:?}", args);
+}"#;
+    let p = project()
+        .file("src/main.rs", &embed)
+        .build();
+
+    p.cargo(command)
+        .masquerade_as_nightly_cargo(&["unstable-options"])
+        .arg("-Zunstable-options")
+        .arg("--lockfile-path")
+        .arg(lockfile_path_argument)
+        .arg("--manifest-path")
+        .arg("src/main.rs")
+        .arg("-Zscript")
+        .run();
+
+    assert!(p.root().join(lockfile_path_argument).is_file());
+    assert!(!p.root().join("Cargo.lock").is_file());
+}
+
+fn assert_lockfile_override(command: &str) {
+    let lockfile_path_argument = "mylockfile/Cargo.lock";
+    let p = basic_project()
+        .file("Cargo.lock", "This is an invalid lock file!")
+        .build();
+
+    run_basic_command(&p, command, lockfile_path_argument);
+
+    assert!(p.root().join(lockfile_path_argument).is_file());
+}
+
 fn assert_symlink_in_path(command: &str) {
     if !symlink_supported() {
         return;
@@ -65,31 +116,6 @@ fn assert_symlink_in_path(command: &str) {
     assert!(p.root().join(lockfile_path_argument).is_file());
     assert!(p.root().join(dst).join("Cargo.lock").is_file());
 }
-
-// TODO: test embed:
-// --lockfile-path mylockfile/Cargo.lock --manifest-path src/main.rs -Zunstable-options -Zscript
-// Example embed:
-
-// #!/usr/bin/env cargo
-//
-// //! ```cargo
-// //! [dependencies]
-// //! clap = { version = "4.2", features = ["derive"] }
-// //! ```
-//
-// use clap::Parser;
-//
-// #[derive(Parser, Debug)]
-// #[clap(version)]
-// struct Args {
-//     #[clap(short, long, help = "Path to config")]
-//     config: Option<std::path::PathBuf>,
-// }
-//
-// fn main() {
-//     let args = Args::parse();
-//     println!("{:?}", args);
-// }
 
 fn assert_symlink_lockfile(command: &str) {
     if !symlink_supported() {
@@ -178,20 +204,14 @@ Caused by:
         .run();
 }
 
-fn assert_lockfile_override(command: &str) {
-    let lockfile_path_argument = "mylockfile/Cargo.lock";
-    let p = basic_project()
-        .file("Cargo.lock", "This is an invalid lock file!")
-        .build();
-
-    run_basic_command(&p, command, lockfile_path_argument);
-
-    assert!(p.root().join(lockfile_path_argument).is_file());
-}
-
 #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
 fn metadata_lockfile_created() {
     assert_lockfile_created("metadata");
+}
+
+#[cargo_test(nightly, reason = "--lockfile-path is unstable")]
+fn metadata_embed() {
+    assert_embed("metadata");
 }
 
 #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
