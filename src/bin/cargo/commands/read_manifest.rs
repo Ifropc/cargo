@@ -11,7 +11,6 @@ Deprecated, use `<cyan,bold>cargo metadata --no-deps</>` instead.\
         ))
         .arg_silent_suggestion()
         .arg_manifest_path()
-        .arg_lockfile_path()
 }
 
 pub fn exec(gctx: &mut GlobalContext, args: &ArgMatches) -> CliResult {
