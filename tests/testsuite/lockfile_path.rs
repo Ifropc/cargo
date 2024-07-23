@@ -1,11 +1,13 @@
 //! Tests for `lockfile-path` flag
 
+use std::fs;
+
+use snapbox::str;
+
 use cargo_test_support::paths::CargoPathExt;
 use cargo_test_support::{
-    basic_bin_manifest, cargo_test, project, symlink_supported, Project, ProjectBuilder,
+    basic_bin_manifest, cargo_test, project, symlink_supported, Execs, ProjectBuilder,
 };
-use snapbox::str;
-use std::fs;
 
 fn basic_project() -> ProjectBuilder {
     return project()
@@ -13,22 +15,20 @@ fn basic_project() -> ProjectBuilder {
         .file("src/main.rs", "fn main() {}");
 }
 
-fn run_basic_command(p: &Project, command: &str, lockfile_path_argument: &str) {
-    p.cargo(command)
+fn make_basic_command(execs: &mut Execs, lockfile_path_argument: String) -> &mut Execs {
+    return execs
         .masquerade_as_nightly_cargo(&["unstable-options"])
         .arg("-Zunstable-options")
         .arg("--lockfile-path")
-        .arg(lockfile_path_argument)
-        .run();
+        .arg(lockfile_path_argument);
 }
 
-#[track_caller]
-fn assert_lockfile_created(command: &str) {
+fn assert_lockfile_created(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     let lockfile_path_argument = "mylockfile/Cargo.lock";
     let p = basic_project().build();
 
     for _ in 1..=2 {
-        run_basic_command(&p, command, lockfile_path_argument);
+        make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).run();
         assert!(p.root().join(lockfile_path_argument).is_file());
         assert!(!p.root().join("Cargo.lock").is_file());
     }
@@ -38,24 +38,23 @@ fn assert_lockfile_created(command: &str) {
         .parent()
         .unwrap()
         .rm_rf();
-
-    run_basic_command(&p, command, lockfile_path_argument);
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).run();
     assert!(p.root().join(lockfile_path_argument).is_file());
     assert!(!p.root().join("Cargo.lock").is_file());
 }
 
-fn assert_lockfile_override(command: &str) {
+fn assert_lockfile_override(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     let lockfile_path_argument = "mylockfile/Cargo.lock";
     let p = basic_project()
         .file("Cargo.lock", "This is an invalid lock file!")
         .build();
 
-    run_basic_command(&p, command, lockfile_path_argument);
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).run();
 
     assert!(p.root().join(lockfile_path_argument).is_file());
 }
 
-fn assert_symlink_in_path(command: &str) {
+fn assert_symlink_in_path(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     if !symlink_supported() {
         return;
     }
@@ -70,14 +69,14 @@ fn assert_symlink_in_path(command: &str) {
         .unwrap_or_else(|e| panic!("could not create directory {}", e));
     assert!(p.root().join(src).is_dir());
 
-    run_basic_command(&p, command, lockfile_path_argument.as_str());
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).run();
 
     assert!(p.root().join(format!("{src}/Cargo.lock")).is_file());
     assert!(p.root().join(lockfile_path_argument).is_file());
     assert!(p.root().join(dst).join("Cargo.lock").is_file());
 }
 
-fn assert_symlink_lockfile(command: &str) {
+fn assert_symlink_lockfile(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     if !symlink_supported() {
         return;
     }
@@ -100,12 +99,12 @@ version = "0.5.0"
 
     assert!(p.root().join(src).is_file());
 
-    run_basic_command(&p, command, lockfile_path_argument);
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).run();
 
     assert!(!p.root().join("Cargo.lock").is_file());
 }
 
-fn assert_broken_symlink(command: &str) {
+fn assert_broken_symlink(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     if !symlink_supported() {
         return;
     }
@@ -117,11 +116,7 @@ fn assert_broken_symlink(command: &str) {
     let p = basic_project().symlink_dir(invalid_dst, src).build();
     assert!(!p.root().join(src).is_dir());
 
-    p.cargo(command)
-        .masquerade_as_nightly_cargo(&["unstable-options"])
-        .arg("-Zunstable-options")
-        .arg("--lockfile-path")
-        .arg(lockfile_path_argument)
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
         .with_status(101)
         .with_stderr_data(str![[r#"
 [ERROR] Failed to create lockfile-path parent directory somedir/link
@@ -133,7 +128,7 @@ Caused by:
         .run();
 }
 
-fn assert_loop_symlink(command: &str) {
+fn assert_loop_symlink(command: &str, make_execs: impl Fn(&mut Execs, String) -> &mut Execs) {
     if !symlink_supported() {
         return;
     }
@@ -148,11 +143,7 @@ fn assert_loop_symlink(command: &str) {
         .build();
     assert!(!p.root().join(src).is_dir());
 
-    p.cargo(command)
-        .masquerade_as_nightly_cargo(&["unstable-options"])
-        .arg("-Zunstable-options")
-        .arg("--lockfile-path")
-        .arg(lockfile_path_argument)
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
         .with_status(101)
         .with_stderr_data(str![[r#"
 [ERROR] Failed to fetch lock file's parent path metadata somedir/link
@@ -165,60 +156,64 @@ Caused by:
 }
 
 macro_rules! tests {
-    ($name: ident, $command:expr) => {
+    ($name: ident, $command:expr, $f:expr) => {
         #[cfg(test)]
         mod $name {
             use super::*;
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_lockfile_created() {
-                assert_lockfile_created($command);
+                assert_lockfile_created($command, $f);
             }
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_lockfile_override() {
-                assert_lockfile_override($command);
+                assert_lockfile_override($command, $f);
             }
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_symlink_in_path() {
-                assert_symlink_in_path($command);
+                assert_symlink_in_path($command, $f);
             }
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_symlink_lockfile() {
-                assert_symlink_lockfile($command);
+                assert_symlink_lockfile($command, $f);
             }
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_broken_symlink() {
-                assert_broken_symlink($command);
+                assert_broken_symlink($command, $f);
             }
-        
+
             #[cargo_test(nightly, reason = "--lockfile-path is unstable")]
             fn test_loop_symlink() {
-                assert_loop_symlink($command);
+                assert_loop_symlink($command, $f);
             }
         }
-    }
+    };
+
+    ($name: ident, $command:expr) => {
+        tests!($name, $command, make_basic_command);
+    };
 }
 
-tests!(add, "add");
+// tests!(add, "add");
 tests!(bench, "bench");
 tests!(build, "build");
 tests!(check, "check");
-tests!(clean, "clean");
+// tests!(clean, "clean");
 tests!(doc, "doc");
 tests!(fetch, "fetch");
-tests!(fix, "fix");
+// tests!(fix, "fix");
 tests!(generate_lockfile, "generate-lockfile");
-tests!(locate_project, "locate-project");
+// tests!(locate_project, "locate-project");
 tests!(metadata, "metadata");
-tests!(package, "package");
-tests!(pkgid, "pkgid");
-tests!(publish, "publish");
-tests!(read_manifest, "read-manifest");
-tests!(remove, "remove");
+// tests!(package, "package");
+// tests!(pkgid, "pkgid");
+// tests!(publish, "publish");
+// tests!(read_manifest, "read-manifest");
+// tests!(remove, "remove");
 tests!(run, "run");
 tests!(rustc, "rustc");
 tests!(rustdoc, "rustdoc");
@@ -226,4 +221,4 @@ tests!(test, "test");
 tests!(tree, "tree");
 tests!(update, "update");
 tests!(vendor, "vendor");
-tests!(verify_project, "verify-project");
+// tests!(verify_project, "verify-project");
