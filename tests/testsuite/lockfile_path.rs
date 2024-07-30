@@ -5,11 +5,11 @@ use std::fs;
 use snapbox::str;
 
 use cargo_test_support::paths::CargoPathExt;
+use cargo_test_support::registry::RegistryBuilder;
 use cargo_test_support::{
     basic_bin_manifest, basic_lib_manifest, cargo_test, paths, project, symlink_supported, Execs,
     Project, ProjectBuilder,
 };
-use cargo_test_support::registry::RegistryBuilder;
 
 const VALID_LOCKFILE: &str = r#"# Test lockfile
 version = 3
@@ -57,7 +57,9 @@ fn assert_lockfile_created(
     let p = make_project().build();
     let registry = RegistryBuilder::new().http_api().http_index().build();
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).replace_crates_io(registry.index_url()).run();
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .replace_crates_io(registry.index_url())
+        .run();
     assert!(!p.root().join("Cargo.lock").is_file());
     assert!(p.root().join(lockfile_path_argument).is_file());
 }
@@ -73,7 +75,9 @@ fn assert_lockfile_read(
         .build();
     let registry = RegistryBuilder::new().http_api().http_index().build();
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).replace_crates_io(registry.index_url()).run();
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .replace_crates_io(registry.index_url())
+        .run();
 
     assert!(!p.root().join("Cargo.lock").is_file());
     assert!(p.root().join(lockfile_path_argument).is_file());
@@ -94,7 +98,9 @@ fn assert_lockfile_override(
         .build();
     let registry = RegistryBuilder::new().http_api().http_index().build();
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).replace_crates_io(registry.index_url()).run();
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .replace_crates_io(registry.index_url())
+        .run();
 
     assert!(p.root().join(lockfile_path_argument).is_file());
 }
@@ -119,7 +125,9 @@ fn assert_symlink_in_path(
         .unwrap_or_else(|e| panic!("could not create directory {}", e));
     assert!(p.root().join(src).is_dir());
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).replace_crates_io(registry.index_url()).run();
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .replace_crates_io(registry.index_url())
+        .run();
 
     assert!(p.root().join(format!("{src}/Cargo.lock")).is_file());
     assert!(p.root().join(lockfile_path_argument).is_file());
@@ -147,7 +155,9 @@ fn assert_symlink_lockfile(
 
     assert!(p.root().join(src).is_file());
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string()).replace_crates_io(registry.index_url()).run();
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .replace_crates_io(registry.index_url())
+        .run();
 
     assert!(!p.root().join("Cargo.lock").is_file());
 }
@@ -178,7 +188,8 @@ Caused by:
   File exists (os error 17)
 
 "#]])
-        .replace_crates_io(registry.index_url()).run();
+        .replace_crates_io(registry.index_url())
+        .run();
 }
 
 fn assert_loop_symlink(
@@ -210,7 +221,8 @@ Caused by:
   Too many levels of symbolic links (os error 40)
 
 "#]])
-        .replace_crates_io(registry.index_url()).run();
+        .replace_crates_io(registry.index_url())
+        .run();
 }
 
 /////////////////////
@@ -266,7 +278,9 @@ macro_rules! tests {
 }
 
 fn make_add_command(execs: &mut Execs, lockfile_path_argument: String) -> &mut Execs {
-    return make_basic_command(execs, lockfile_path_argument).arg("--path").arg("../bar");
+    return make_basic_command(execs, lockfile_path_argument)
+        .arg("--path")
+        .arg("../bar");
 }
 
 fn make_add_project() -> ProjectBuilder {
@@ -290,11 +304,13 @@ fn make_fix_command(execs: &mut Execs, lockfile_path_argument: String) -> &mut E
 
 fn make_remove_project() -> ProjectBuilder {
     let mut manifest = basic_bin_manifest("test_foo");
-    manifest.push_str(r#"#
+    manifest.push_str(
+        r#"#
 [dependencies]
 test_bar = { version = "0.1.0", path = "../bar" }
-"#);
-    
+"#,
+    );
+
     return project()
         .file("Cargo.toml", &manifest)
         .file("src/main.rs", "fn main() {}")
@@ -313,12 +329,12 @@ tests!(check, "check");
 tests!(clean, "clean", make_clean_command, make_basic_project);
 tests!(doc, "doc");
 tests!(fetch, "fetch");
-// tests!(fix, "fix", make_fix_command); // TODO: check why creates lockfile in a wrong place
+tests!(fix, "fix", make_fix_command, make_basic_project);
 tests!(generate_lockfile, "generate-lockfile");
 tests!(metadata, "metadata");
 // tests!(package, "package"); // TODO: check why lockfile is not generated
 tests!(pkgid, "pkgid");
-tests!(publish, "publish"); 
+tests!(publish, "publish");
 tests!(remove, "remove", make_remove_command, make_remove_project);
 tests!(run, "run");
 tests!(rustc, "rustc");

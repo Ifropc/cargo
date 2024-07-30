@@ -1,6 +1,5 @@
 use crate::command_prelude::*;
 
-use cargo::core::Workspace;
 use cargo::ops;
 
 pub fn cli() -> Command {
@@ -72,8 +71,7 @@ pub fn exec(gctx: &mut GlobalContext, args: &ArgMatches) -> CliResult {
     // Unlike other commands default `cargo fix` to all targets to fix as much
     // code as we can.
     let root_manifest = args.root_manifest(gctx)?;
-    let mut ws = Workspace::new(&root_manifest, gctx)?;
-    ws.set_resolve_honors_rust_version(args.honor_rust_version());
+    let ws = args.workspace(gctx)?;
     let mut opts = args.compile_options(gctx, mode, Some(&ws), ProfileChecking::LegacyTestOnly)?;
 
     if !opts.filter.is_specific() {
