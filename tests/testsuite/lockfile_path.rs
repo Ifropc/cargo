@@ -177,15 +177,27 @@ fn assert_broken_symlink(
     assert!(!p.root().join(src).is_dir());
     let registry = RegistryBuilder::new().http_api().http_index().build();
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
-        .with_status(101)
-        .with_stderr_data(str![[r#"
+    let err_msg = if !cfg!(windows) {
+        str![[r#"
 [ERROR] Failed to create lockfile-path parent directory somedir/link
 
 Caused by:
   File exists (os error 17)
 
-"#]])
+"#]]
+    } else {
+        str![[r#"
+[ERROR] Failed to create lockfile-path parent directory somedir/link
+
+Caused by:
+   "Cannot create a file when that file already exists. (os error 183)"
+
+"#]]
+    };
+
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .with_status(101)
+        .with_stderr_data(err_msg)
         .replace_crates_io(registry.index_url())
         .run();
 }
@@ -210,15 +222,27 @@ fn assert_loop_symlink(
     assert!(!p.root().join(src).is_dir());
     let registry = RegistryBuilder::new().http_api().http_index().build();
 
-    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
-        .with_status(101)
-        .with_stderr_data(str![[r#"
+    let err_msg = if !cfg!(windows) {
+        str![[r#"
 [ERROR] Failed to fetch lock file's parent path metadata somedir/link
 
 Caused by:
   Too many levels of symbolic links (os error 40)
 
-"#]])
+"#]]
+    } else {
+        str![[r#"
+[ERROR] Failed to fetch lock file's parent path metadata somedir/link
+
+Caused by:
+  The name of the file cannot be resolved by the system. (os error 1921)
+
+"#]]
+    };
+
+    make_execs(&mut p.cargo(command), lockfile_path_argument.to_string())
+        .with_status(101)
+        .with_stderr_data(err_msg)
         .replace_crates_io(registry.index_url())
         .run();
 }
